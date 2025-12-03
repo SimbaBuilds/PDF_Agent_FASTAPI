@@ -200,6 +200,10 @@ def create_email_pdf_action(
     Returns:
         Action object configured for PDF emailing
     """
+    async def handler_wrapper(input_str: str) -> str:
+        """Async wrapper for email_pdf_handler."""
+        return await email_pdf_handler(input_str, user_id, supabase, request_id)
+
     return Action(
         name="email_pdf",
         description="Send a PDF document to a recipient via email. IMPORTANT: Before using this tool, you MUST ask the user for their name and email address. Use create_pdf first to generate the document, then use this tool to send it.",
@@ -226,5 +230,5 @@ def create_email_pdf_action(
             }
         },
         returns="JSON object with success status and email ID",
-        handler=lambda input_str: email_pdf_handler(input_str, user_id, supabase, request_id)
+        handler=handler_wrapper
     )

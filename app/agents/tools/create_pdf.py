@@ -145,6 +145,10 @@ def create_create_pdf_action(
     Returns:
         Action object configured for PDF creation
     """
+    async def handler_wrapper(input_str: str) -> str:
+        """Async wrapper for create_pdf_handler."""
+        return await create_pdf_handler(input_str, user_id, supabase, request_id)
+
     return Action(
         name="create_pdf",
         description="Create a new PDF document containing a summary or report. Use this to generate documents from content you've gathered or created during the conversation.",
@@ -168,5 +172,5 @@ def create_create_pdf_action(
             }
         },
         returns="JSON object with success status, PDF ID, and filename. The PDF ID can be used with email_pdf to send the document.",
-        handler=lambda input_str: create_pdf_handler(input_str, user_id, supabase, request_id)
+        handler=handler_wrapper
     )

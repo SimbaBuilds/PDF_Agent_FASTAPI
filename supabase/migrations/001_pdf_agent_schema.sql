@@ -90,7 +90,7 @@ RETURNS TABLE (
     medical_record_id UUID,
     page_number INT,
     content TEXT,
-    match_count BIGINT
+    matches_found BIGINT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -103,7 +103,7 @@ BEGIN
         rp.page_number,
         rp.content,
         (LENGTH(rp.content) - LENGTH(REPLACE(LOWER(rp.content), LOWER(search_pattern), '')))
-            / NULLIF(LENGTH(search_pattern), 0) AS match_count
+            / NULLIF(LENGTH(search_pattern), 0) AS matches_found
     FROM record_pages rp
     WHERE rp.user_id = target_user_id
         AND (target_pdf_id IS NULL OR rp.medical_record_id = target_pdf_id)
@@ -122,10 +122,13 @@ $$;
 -- Grant execute permission to authenticated users
 GRANT EXECUTE ON FUNCTION search_pdf_pages_by_text TO authenticated;
 
--- Add embedding column to record_pages if it doesn't exist
+-- Add embedding column to record_pages if table exists and column doesn't exist
 DO $$
 BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'record_pages'
+    ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'record_pages' AND column_name = 'embedding'
     ) THEN
@@ -133,11 +136,27 @@ BEGIN
     END IF;
 END $$;
 
--- Create index on record_pages embedding for faster similarity search
-CREATE INDEX IF NOT EXISTS idx_record_pages_embedding
-    ON record_pages USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+-- Create index on record_pages embedding for faster similarity search if table exists
+-- Note: Using hnsw instead of ivfflat due to memory constraints on this tier
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'record_pages'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_record_pages_embedding
+            ON record_pages USING hnsw (embedding vector_cosine_ops);
+    END IF;
+END $$;
 
--- Create index on record_pages for user and medical_record lookups
-CREATE INDEX IF NOT EXISTS idx_record_pages_user_medical_record
-    ON record_pages(user_id, medical_record_id);
+-- Create index on record_pages for user and medical_record lookups if table exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'record_pages'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_record_pages_user_medical_record
+            ON record_pages(user_id, medical_record_id);
+    END IF;
+END $$;

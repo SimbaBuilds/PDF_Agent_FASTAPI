@@ -13,7 +13,7 @@ class VerboseDbTest extends BaseAutomationHandler {
     };
 
     try {
-      const testUserId = "56a2c117-6486-4ca5-a57d-6c2e877e7083";
+      const testUserId = "703b410f-f50c-4bc8-b9a3-0991fed5a023";
       const testAutomationId = "6a6dbfa5-350b-4105-b96b-cbd07d13850c";
       
       results.step = "initialized";

@@ -171,6 +171,10 @@ def create_fetch_pdf_content_action(
     Returns:
         Action object configured for PDF content fetching
     """
+    async def handler_wrapper(input_str: str) -> str:
+        """Async wrapper for fetch_pdf_content_handler."""
+        return await fetch_pdf_content_handler(input_str, user_id, supabase, request_id)
+
     return Action(
         name="fetch_pdf_content",
         description="Search and retrieve content from uploaded PDF documents. Use 'semantic' search for natural language queries about topics or concepts. Use 'grep' search for specific terms, codes, or exact text patterns.",
@@ -194,5 +198,5 @@ def create_fetch_pdf_content_action(
             }
         },
         returns="JSON object with search results containing page content, page numbers, and relevance scores",
-        handler=lambda input_str: fetch_pdf_content_handler(input_str, user_id, supabase, request_id)
+        handler=handler_wrapper
     )

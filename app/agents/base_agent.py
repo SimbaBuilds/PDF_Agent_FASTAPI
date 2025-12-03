@@ -94,11 +94,12 @@ class BaseAgent:
         retry_config: Optional[RetryConfig] = None,
         calling_agent: str = None,
         enable_caching: bool = False,
-        cache_static_content: bool = True
+        cache_static_content: bool = True,
+        messages: Optional[List[Message]] = None
     ):
         """
         Initialize a base agent with customizable system prompt and actions.
-        
+
         Args:
             actions: List of Action objects defining available actions with their handlers
             additional_context: The context that defines the agent's behavior
@@ -112,6 +113,7 @@ class BaseAgent:
             calling_agent: Name of the agent calling this agent
             enable_caching: Whether to enable Anthropic prompt caching (only for Anthropic models)
             cache_static_content: Whether to cache static content sections
+            messages: Optional list of initial messages to add to conversation history
         """
         provider = get_provider_from_model(model)
 
@@ -150,8 +152,12 @@ class BaseAgent:
         
         all_actions = actions
         self.actions = {action.name: action for action in all_actions}  # Store actions by name
-        
+
         self.messages = []
+        # Add initial messages if provided
+        if messages:
+            self.add_message(messages)
+
         self.action_re = re.compile('^Action: (\w+): (.*)', re.MULTILINE | re.IGNORECASE | re.DOTALL)
         self.max_turns = max_turns
         
@@ -727,10 +733,14 @@ Do not include any explanation - just the corrected JSON wrapped in ```json``` c
             # Define cancellation check function
             def check_cancellation():
                 if request_id and supabase:
-                    from app.agents.primary_agent.primary_agent import check_cancellation_request
-                    from fastapi import HTTPException
-                    if check_cancellation_request(request_id, user_id, supabase):
-                        raise HTTPException(status_code=499, detail="Request was cancelled during agent processing")
+                    try:
+                        from app.agents.primary_agent.primary_agent import check_cancellation_request
+                        from fastapi import HTTPException
+                        if check_cancellation_request(request_id, user_id, supabase):
+                            raise HTTPException(status_code=499, detail="Request was cancelled during agent processing")
+                    except ImportError:
+                        # check_cancellation_request not available, skip cancellation checking
+                        pass
             
             action_count = 0
             

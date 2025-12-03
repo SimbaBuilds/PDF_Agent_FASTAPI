@@ -168,7 +168,7 @@ async def get_chat_response(
         )
 
         # Get response from agent
-        response = await agent.get_response(messages)
+        response = await agent.query(messages, user_id, request_id, supabase)
 
         logger.info(f"PDF Agent response generated for request {request_id}")
 

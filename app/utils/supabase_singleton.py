@@ -8,7 +8,8 @@ import time
 from typing import Optional, Dict, Any
 import httpx
 from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
+from supabase.lib.client_options import SyncClientOptions
+from supabase_auth._sync.storage import SyncMemoryStorage
 from httpx import HTTPTransport, Limits
 
 from app.config.supabase_config import get_supabase_config, SupabaseConfig
@@ -64,13 +65,15 @@ class SupabaseSingleton:
         )
         
         # Configure Supabase client options
-        options = ClientOptions(
+        options = SyncClientOptions(
             postgrest_client_timeout=self._config.query_timeout,
             storage_client_timeout=self._config.query_timeout,
             auto_refresh_token=False,  # Service role doesn't need refresh
             persist_session=False,     # No session persistence needed
+            storage=SyncMemoryStorage(),   # Use in-memory storage for service role
+            httpx_client=httpx_client, # Pass our optimized httpx client
         )
-        
+
         # Create Supabase client
         client = create_client(
             self._config.url,
@@ -78,16 +81,7 @@ class SupabaseSingleton:
             options=options
         )
         
-        # Apply optimized connection settings to the existing session
-        if hasattr(client.postgrest, 'session'):
-            existing_session = client.postgrest.session
-            # Copy our optimized timeout settings
-            if hasattr(existing_session, 'timeout'):
-                existing_session.timeout = httpx_client.timeout
-            logger.info("Applied optimized timeout settings to Supabase client session")
-        
-        # Close our temporary client
-        httpx_client.close()
+        # Note: The httpx_client is now managed by Supabase, so we don't close it here
         
         # Warmup connection to avoid cold start latency
         try:
