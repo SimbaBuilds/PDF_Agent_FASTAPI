@@ -91,7 +91,7 @@ class PDFProcessor:
                             'Content-Type': 'application/json'
                         },
                         json={'batchSize': 50},  # Process up to 50 jobs per invocation
-                        timeout=5  # Short timeout since we don't wait for completion
+                        timeout=30  # Allow time for edge function to acknowledge
                     )
 
                     logger.info(f"HTTP request completed - Status: {response.status_code}")
