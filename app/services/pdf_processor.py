@@ -9,6 +9,8 @@ import io
 import logging
 import time
 import base64
+import os
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -46,6 +48,56 @@ class PDFProcessor:
         self.text_threshold = 200  # Minimum characters for PDF text extraction
 
         logger.info("Initialized PDF processor")
+
+    async def _trigger_embedding_processor(self, supabase: SupabaseClient) -> None:
+        """
+        Trigger the Supabase Edge Function to process pending embedding jobs.
+        This is a fire-and-forget operation - errors are logged but not raised.
+
+        Args:
+            supabase: Supabase client for authentication
+        """
+        try:
+            # Get Supabase URL and anon key from environment
+            supabase_url = os.getenv('SUPABASE_URL')
+            supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
+
+            if not supabase_url or not supabase_anon_key:
+                logger.warning("Supabase credentials not found, skipping embedding trigger")
+                return
+
+            # Build edge function URL
+            edge_function_url = f"{supabase_url}/functions/v1/process-embeddings"
+
+            # Trigger the edge function (fire and forget)
+            logger.info("Triggering embedding processor edge function")
+
+            # Use asyncio.create_task for true fire-and-forget
+            async def invoke_edge_function():
+                try:
+                    response = await asyncio.to_thread(
+                        requests.post,
+                        edge_function_url,
+                        headers={
+                            'Authorization': f'Bearer {supabase_anon_key}',
+                            'Content-Type': 'application/json'
+                        },
+                        json={'batchSize': 50},  # Process up to 50 jobs per invocation
+                        timeout=5  # Short timeout since we don't wait for completion
+                    )
+
+                    if response.ok:
+                        logger.info(f"Successfully triggered embedding processor: {response.json()}")
+                    else:
+                        logger.warning(f"Embedding processor trigger returned status {response.status_code}: {response.text}")
+                except Exception as e:
+                    logger.warning(f"Failed to trigger embedding processor: {str(e)}")
+
+            # Fire and forget - don't await
+            asyncio.create_task(invoke_edge_function())
+
+        except Exception as e:
+            logger.warning(f"Error in embedding processor trigger: {str(e)}")
 
     async def process_pdfs(
         self,
@@ -186,6 +238,9 @@ class PDFProcessor:
 
                 if not embedding_queued:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
+                else:
+                    # Trigger immediate embedding processing (fire and forget)
+                    await self._trigger_embedding_processor(supabase)
 
             # Status will be updated to 'completed' by database trigger after all embeddings finish
 
@@ -592,6 +647,9 @@ class PDFProcessor:
 
                 if not embedding_queued:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
+                else:
+                    # Trigger immediate embedding processing (fire and forget)
+                    await self._trigger_embedding_processor(supabase)
 
             # Update medical record with page count and status
             await self._update_pdf_document_after_processing(
