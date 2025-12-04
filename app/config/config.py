@@ -29,7 +29,7 @@ SERVICE_TOOL_MAX_TIMEOUT = 3600  # seconds - maximum allowed timeout
 
 
 # PDF Agent Configuration
-PDF_AGENT_LLM_MODEL = SONNET_4_5
+PDF_AGENT_LLM_MODEL = HAIKU_4_5
 PDF_AGENT_MAX_TURNS = 16
 PDF_SIMILARITY_THRESHOLD = 0.3  # Minimum similarity score for semantic search
 PDF_SEMANTIC_SEARCH_MAX_RESULTS = 5  # Max results from semantic search
