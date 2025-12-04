@@ -21,6 +21,7 @@ from app.agents.models import Message, Action
 from supabase import Client as SupabaseClient
 
 from app.agents.tools.fetch_pdf_content import create_fetch_pdf_content_action
+from app.agents.tools.search_pdf_documents import create_search_pdf_documents_action
 from app.agents.tools.create_pdf import create_create_pdf_action
 from app.agents.tools.email_pdf import create_email_pdf_action
 from app.agents.tools.perplexity_tools import get_perplexity_search_action
@@ -70,8 +71,14 @@ class PrimaryAgent(BaseAgent):
         self.supabase = supabase
         self.request_id = request_id
 
-        # Create the 4 PDF agent tools
+        # Create the PDF agent tools
         fetch_pdf_action = create_fetch_pdf_content_action(
+            user_id=user_id,
+            supabase=supabase,
+            request_id=request_id
+        )
+
+        search_pdf_docs_action = create_search_pdf_documents_action(
             user_id=user_id,
             supabase=supabase,
             request_id=request_id
@@ -101,6 +108,7 @@ class PrimaryAgent(BaseAgent):
             messages=messages,
             actions=[
                 fetch_pdf_action,
+                search_pdf_docs_action,
                 create_pdf_action,
                 email_pdf_action,
                 perplexity_action

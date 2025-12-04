@@ -107,9 +107,8 @@ class EmailService:
             msg['To'] = f"{recipient_name} <{recipient_email}>"
             msg['Subject'] = subject
 
-            # Add body text
-            body_with_greeting = f"Hi {recipient_name},\n\n{body}"
-            msg.attach(MIMEText(body_with_greeting, 'plain'))
+            
+            msg.attach(MIMEText(body, 'plain'))
 
             # Attach the PDF
             pdf_attachment = MIMEApplication(pdf_bytes, _subtype='pdf')
