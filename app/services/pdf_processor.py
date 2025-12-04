@@ -224,11 +224,14 @@ class PDFProcessor:
             embedding_jobs = []
 
             for page_num, page_content in enumerate(pages, 1):
+                # Sanitize content once for both page record and embedding job
+                sanitized_content = self._sanitize_text_for_db(page_content)
+
                 page_id = await self._create_record_page(
                     user_id=user_id,
                     pdf_document_id=record_id,
                     page_number=page_num,
-                    content=page_content,
+                    content=sanitized_content,
                     supabase=supabase
                 )
                 page_ids.append(page_id)
@@ -236,7 +239,7 @@ class PDFProcessor:
                 # Collect embedding job data for batch processing
                 embedding_jobs.append({
                     'pdf_page_id': str(page_id),
-                    'content': page_content
+                    'content': sanitized_content
                 })
 
             # Batch queue all embedding jobs in a single database operation
@@ -481,6 +484,28 @@ class PDFProcessor:
         except Exception as e:
             raise ValueError(f"Database error creating medical record: {str(e)}")
 
+    def _sanitize_text_for_db(self, text: str) -> str:
+        """
+        Sanitize text for PostgreSQL storage by removing problematic characters.
+
+        Args:
+            text: Raw text extracted from PDF
+
+        Returns:
+            Sanitized text safe for database storage
+        """
+        if not text:
+            return text
+
+        # Remove null bytes (PostgreSQL cannot store \x00 in text fields)
+        sanitized = text.replace('\x00', '')
+
+        # Remove other control characters that might cause issues (optional but recommended)
+        # Keep common whitespace: \t (tab), \n (newline), \r (carriage return)
+        sanitized = ''.join(char for char in sanitized if ord(char) >= 32 or char in '\t\n\r')
+
+        return sanitized
+
     async def _create_record_page(
         self,
         user_id: str,
@@ -491,12 +516,15 @@ class PDFProcessor:
     ) -> UUID:
         """Create record page in database."""
         try:
+            # Sanitize content to remove null bytes and other problematic characters
+            sanitized_content = self._sanitize_text_for_db(content)
+
             page_data = {
                 'id': str(uuid4()),
                 'user_id': user_id,
                 'pdf_document_id': str(pdf_document_id),
                 'page_number': page_number,
-                'content': content
+                'content': sanitized_content
             }
 
             result = supabase.from_('pdf_pages').insert(page_data).execute()
@@ -637,11 +665,14 @@ class PDFProcessor:
             embedding_jobs = []
 
             for page_num, page_content in enumerate(pages, 1):
+                # Sanitize content once for both page record and embedding job
+                sanitized_content = self._sanitize_text_for_db(page_content)
+
                 page_id = await self._create_record_page(
                     user_id=user_id,
                     pdf_document_id=record_id,
                     page_number=page_num,
-                    content=page_content,
+                    content=sanitized_content,
                     supabase=supabase
                 )
                 page_ids.append(page_id)
@@ -649,7 +680,7 @@ class PDFProcessor:
                 # Collect embedding job data for batch processing
                 embedding_jobs.append({
                     'pdf_page_id': str(page_id),
-                    'content': page_content
+                    'content': sanitized_content
                 })
 
             # Batch queue all embedding jobs in a single database operation
