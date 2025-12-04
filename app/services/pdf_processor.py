@@ -58,9 +58,14 @@ class PDFProcessor:
             supabase: Supabase client for authentication
         """
         try:
+            logger.info("=== EMBEDDING TRIGGER START ===")
+
             # Get Supabase URL and anon key from environment
             supabase_url = os.getenv('SUPABASE_URL')
             supabase_anon_key = os.getenv('SUPABASE_ANON_KEY')
+
+            logger.info(f"Environment check - SUPABASE_URL: {'SET' if supabase_url else 'NOT SET'}")
+            logger.info(f"Environment check - SUPABASE_ANON_KEY: {'SET' if supabase_anon_key else 'NOT SET'}")
 
             if not supabase_url or not supabase_anon_key:
                 logger.warning("Supabase credentials not found, skipping embedding trigger")
@@ -68,13 +73,16 @@ class PDFProcessor:
 
             # Build edge function URL
             edge_function_url = f"{supabase_url}/functions/v1/process-embeddings"
+            logger.info(f"Edge function URL: {edge_function_url}")
 
             # Trigger the edge function (fire and forget)
-            logger.info("Triggering embedding processor edge function")
+            logger.info("Creating async task to trigger embedding processor")
 
             # Use asyncio.create_task for true fire-and-forget
             async def invoke_edge_function():
                 try:
+                    logger.info("Inside invoke_edge_function - about to make HTTP request")
+
                     response = await asyncio.to_thread(
                         requests.post,
                         edge_function_url,
@@ -86,18 +94,22 @@ class PDFProcessor:
                         timeout=5  # Short timeout since we don't wait for completion
                     )
 
+                    logger.info(f"HTTP request completed - Status: {response.status_code}")
+
                     if response.ok:
                         logger.info(f"Successfully triggered embedding processor: {response.json()}")
                     else:
                         logger.warning(f"Embedding processor trigger returned status {response.status_code}: {response.text}")
                 except Exception as e:
-                    logger.warning(f"Failed to trigger embedding processor: {str(e)}")
+                    logger.error(f"Failed to trigger embedding processor: {str(e)}", exc_info=True)
 
             # Fire and forget - don't await
-            asyncio.create_task(invoke_edge_function())
+            task = asyncio.create_task(invoke_edge_function())
+            logger.info(f"Async task created: {task}")
+            logger.info("=== EMBEDDING TRIGGER END ===")
 
         except Exception as e:
-            logger.warning(f"Error in embedding processor trigger: {str(e)}")
+            logger.error(f"Error in embedding processor trigger: {str(e)}", exc_info=True)
 
     async def process_pdfs(
         self,
@@ -229,6 +241,7 @@ class PDFProcessor:
 
             # Batch queue all embedding jobs in a single database operation
             if embedding_jobs:
+                logger.info(f"About to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
                 embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
@@ -239,8 +252,11 @@ class PDFProcessor:
                 if not embedding_queued:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
                 else:
+                    logger.info(f"Successfully queued {len(embedding_jobs)} embedding jobs. Now triggering processor...")
                     # Trigger immediate embedding processing (fire and forget)
                     await self._trigger_embedding_processor(supabase)
+            else:
+                logger.warning(f"No embedding jobs to queue for record {record_id}")
 
             # Status will be updated to 'completed' by database trigger after all embeddings finish
 
@@ -638,6 +654,7 @@ class PDFProcessor:
 
             # Batch queue all embedding jobs in a single database operation
             if embedding_jobs:
+                logger.info(f"About to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
                 embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
@@ -648,8 +665,11 @@ class PDFProcessor:
                 if not embedding_queued:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
                 else:
+                    logger.info(f"Successfully queued {len(embedding_jobs)} embedding jobs. Now triggering processor...")
                     # Trigger immediate embedding processing (fire and forget)
                     await self._trigger_embedding_processor(supabase)
+            else:
+                logger.warning(f"No embedding jobs to queue for record {record_id}")
 
             # Update medical record with page count and status
             await self._update_pdf_document_after_processing(

@@ -900,7 +900,7 @@ class SemanticSearchService:
                     'id': str(uuid4()),
                     'table_name': 'pdf_pages',
                     'pdf_page_id': page_job['pdf_page_id'],
-                    'pdf_document_id': pdf_document_id,
+                    'pdf_document_id': str(pdf_document_id),  # Convert UUID to string
                     'resource_id': None,  # NULL for record pages
                     'user_id': user_id,
                     'content': page_job['content'],
