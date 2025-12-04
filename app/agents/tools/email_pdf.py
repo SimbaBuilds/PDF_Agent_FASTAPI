@@ -230,5 +230,6 @@ def create_email_pdf_action(
             }
         },
         returns="JSON object with success status and email ID",
+        example='Action: email_pdf: {"pdf_id": "abc123-def456", "recipient_email": "user@example.com", "recipient_name": "John Doe", "subject": "Your requested document"}',
         handler=handler_wrapper
     )

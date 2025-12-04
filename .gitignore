@@ -33,3 +33,5 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+/reference_files

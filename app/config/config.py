@@ -22,14 +22,14 @@ CACHE_MAX_CHARS = 15000  # Maximum characters to store in cache
 USE_ONE_HOUR_CACHE = True  # Use 1-hour cache TTL (2x write cost) vs 5-minute (1.25x write cost)
 
 # System Configuration
-SYSTEM_MODEL = HAIKU_4_5
+SYSTEM_MODEL = SONNET_4_5
 THIRD_PARTY_SERVICE_TIMEOUT = 240  # seconds
 SERVICE_TOOL_DEFAULT_TIMEOUT = 240  # seconds - default timeout for service tools
 SERVICE_TOOL_MAX_TIMEOUT = 3600  # seconds - maximum allowed timeout
 
 
 # PDF Agent Configuration
-PDF_AGENT_LLM_MODEL = HAIKU_4_5
+PDF_AGENT_LLM_MODEL = SONNET_4_5
 PDF_AGENT_MAX_TURNS = 8
 PDF_SIMILARITY_THRESHOLD = 0.3  # Minimum similarity score for semantic search
 PDF_SEMANTIC_SEARCH_MAX_RESULTS = 5  # Max results from semantic search

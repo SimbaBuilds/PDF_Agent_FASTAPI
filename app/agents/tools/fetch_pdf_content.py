@@ -198,5 +198,6 @@ def create_fetch_pdf_content_action(
             }
         },
         returns="JSON object with search results containing page content, page numbers, and relevance scores",
+        example='Action: fetch_pdf_content: {"search_type": "semantic", "query": "information about AI iterations and human intervention"}',
         handler=handler_wrapper
     )

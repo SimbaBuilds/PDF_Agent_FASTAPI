@@ -172,5 +172,6 @@ def create_create_pdf_action(
             }
         },
         returns="JSON object with success status, PDF ID, and filename. The PDF ID can be used with email_pdf to send the document.",
+        example='Action: create_pdf: {"title": "Research Summary", "content": "# Key Findings\\n- Point 1\\n- Point 2", "content_type": "summary"}',
         handler=handler_wrapper
     )
