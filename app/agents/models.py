@@ -6,7 +6,7 @@ class Message(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     type: Literal["text", "image"]
-    timestamp: int
+    timestamp: Optional[int] = None
 
 
 class Action(BaseModel):
