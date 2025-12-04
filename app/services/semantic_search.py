@@ -1268,7 +1268,7 @@ class SemanticSearchService:
                     'target_user_id': user_id,
                     'target_pdf_id': pdf_id,
                     'search_pattern': pattern,
-                    'match_count': max_results
+                    'result_limit': max_results
                 }).execute()
 
             db_start = time.time()
