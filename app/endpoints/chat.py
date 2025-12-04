@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
     request_id: Optional[str] = None  # Optional request ID from frontend
     integration_in_progress: bool = False
     image_url: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -140,45 +141,26 @@ async def chat_endpoint(
                 # Continue processing if limit check fails (fail-open for now)
 
         # Ensure request record exists - create if not exists, otherwise update
-        conversation_id = None
+        conversation_id = request_data.conversation_id
+        if not conversation_id:
+            conversation_id = None
+
         try:
-            # First try to update existing record
-            update_result = supabase.from_('requests').update({
-                'status': 'processing',
-                'user_message': request_data.message,
-                'total_turns': 0,
-                'metadata': {
-                    'message_preview': request_data.message[:100],
-                    'history_count': len(request_data.history),
-                    'preferences': request_data.preferences
-                },
-                'updated_at': datetime.now().isoformat()
-            }).eq('request_id', request_id).execute()
+
 
             # Check if update affected any rows
             if not update_result.data:
                 # Record doesn't exist - handle based on environment
 
                 # Production: Retry until record is found
-                max_retries = 16 if os.getenv("ENV") == "PROD" else 8  # (0.5s intervals)
+                max_retries = 2 if os.getenv("ENV") == "PROD" else 1  # (0.5s intervals)
                 retry_count = 0
 
                 while retry_count < max_retries:
                     time.sleep(0.5)  # Wait 500ms between retries
                     retry_count += 1
 
-                    # Try to update the record again
-                    retry_result = supabase.from_('requests').update({
-                        'status': 'processing',
-                        'user_message': request_data.message,
-                        'total_turns': 0,
-                        'metadata': {
-                            'message_preview': request_data.message[:100],
-                            'history_count': len(request_data.history),
-                            'preferences': request_data.preferences
-                        },
-                        'updated_at': datetime.now().isoformat()
-                    }).eq('request_id', request_id).execute()
+ 
 
                     if retry_result.data:
                         logger.info(f"Found request record on retry {retry_count} for request_id: {request_id}")
@@ -218,11 +200,7 @@ async def chat_endpoint(
                     conversation_id = conversation_result.data[0]['id']
                     logger.info(f"Created new conversation: {conversation_id}")
 
-                    # Update request record with conversation_id
-                    supabase.from_('requests').update({
-                        'conversation_id': conversation_id,
-                        'updated_at': datetime.now().isoformat()
-                    }).eq('request_id', request_id).execute()
+            
                 else:
                     logger.error("Failed to create conversation record")
             else:
@@ -327,15 +305,7 @@ async def chat_endpoint(
 
         if not response:
             # Update request status to failed
-            try:
-                supabase.from_('requests').update({
-                    'status': 'failed',
-                    'metadata': {'error': 'No response received from agent'},
-                    'updated_at': datetime.now().isoformat()
-                }).eq('request_id', request_id).execute()
-            except Exception as db_error:
-                logger.error(f"Failed to update request status to failed: {str(db_error)}")
-            
+
             raise HTTPException(
                 status_code=500,
                 detail="No response received from agent"
@@ -394,7 +364,7 @@ async def chat_endpoint(
         # Update request status to completed (but preserve cancelled status if set)
         try:
             # First check current status to avoid overriding cancellation
-            current_status_result = supabase.from_('requests').select('status').eq('request_id', request_id).execute()
+            current_status_result = 'thinking'
             current_status = 'pending'  # default fallback
             
             if current_status_result.data and len(current_status_result.data) > 0:
@@ -402,21 +372,6 @@ async def chat_endpoint(
             
             # Only update to completed if not already cancelled
             if current_status != 'cancelled':
-                supabase.from_('requests').update({
-                    'status': 'completed',
-                    'assistant_response': response,
-                    'metadata': {
-                        'message_preview': request_data.message[:100],
-                        'history_count': len(request_data.history),
-                        'preferences': request_data.preferences,
-                        'settings_updated': settings_updated,
-                        'integration_in_progress': integration_in_progress,
-                        'response_preview': response[:100],
-                        'vision_processing': 'completed' if request_data.image_url and 'Additional context from image:' in request_data.message else ('attempted' if request_data.image_url else 'none')
-                    },
-                    'updated_at': datetime.now().isoformat()
-                }).eq('request_id', request_id).execute()
-                logger.info(f"Request completed successfully: {request_id}")
                 
                 # Increment requests_today counter for successful requests (only if not integration completion and no limits exceeded)
                 if not request_data.integration_in_progress and not limit_exceeded:

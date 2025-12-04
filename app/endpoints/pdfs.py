@@ -111,7 +111,7 @@ async def _update_placeholder_record(
 ) -> None:
     """Update placeholder record with processing results."""
     try:
-        result = supabase.from_('medical_records').update({
+        result = supabase.from_('pdf_documents').update({
             'num_pages': processing_result['num_pages'],
             'status': 'completed',
             'metadata': {
@@ -137,7 +137,7 @@ async def _mark_record_failed(
 ) -> None:
     """Mark a record as failed with error details."""
     try:
-        result = supabase.from_('medical_records').update({
+        result = supabase.from_('pdf_documents').update({
             'status': 'failed',
             'metadata': {
                 'placeholder': False,
@@ -291,8 +291,8 @@ async def get_pdfs(
     try:
         logger.info(f"Fetching PDFs for user {user_id}, limit={limit}, offset={offset}")
 
-        # Query PDF records (stored in medical_records table for backwards compatibility)
-        result = supabase.from_('medical_records').select(
+        # Query PDF records (stored in pdf_documents table for backwards compatibility)
+        result = supabase.from_('pdf_documents').select(
             'id, title, original_file_type, original_filename, '
             'file_size_bytes, num_pages, status, created_at, updated_at'
         ).eq(
@@ -309,7 +309,7 @@ async def get_pdfs(
             records = result.data
 
         # Get total count
-        count_result = supabase.from_('medical_records').select(
+        count_result = supabase.from_('pdf_documents').select(
             'id', count='exact'
         ).eq('user_id', user_id).execute()
 
@@ -333,8 +333,8 @@ async def get_pdfs(
         )
 
 
-@router.get("/api/medical_records/{record_id}")
-async def get_medical_record_details(
+@router.get("/api/pdf_documents/{record_id}")
+async def get_pdf_document_details(
     record_id: str,
     user_id: Annotated[str, Depends(get_current_user)],
     supabase: Annotated[SupabaseClient, Depends(get_supabase_client)]
@@ -346,7 +346,7 @@ async def get_medical_record_details(
         logger.info(f"Fetching medical record {record_id} for user {user_id}")
 
         # Get medical record
-        record_result = supabase.from_('medical_records').select('*').eq(
+        record_result = supabase.from_('pdf_documents').select('*').eq(
             'id', record_id
         ).eq(
             'user_id', user_id
@@ -361,10 +361,10 @@ async def get_medical_record_details(
         record = record_result.data[0]
 
         # Get record pages
-        pages_result = supabase.from_('record_pages').select(
+        pages_result = supabase.from_('pdf_pages').select(
             'id, page_number, content, processed_at, created_at'
         ).eq(
-            'medical_record_id', record_id
+            'pdf_document_id', record_id
         ).eq(
             'user_id', user_id
         ).order('page_number').execute()
@@ -389,8 +389,8 @@ async def get_medical_record_details(
         )
 
 
-@router.delete("/api/medical_records/{record_id}")
-async def delete_medical_record(
+@router.delete("/api/pdf_documents/{record_id}")
+async def delete_pdf_document(
     record_id: str,
     user_id: Annotated[str, Depends(get_current_user)],
     supabase: Annotated[SupabaseClient, Depends(get_supabase_client)]
@@ -402,7 +402,7 @@ async def delete_medical_record(
         logger.info(f"Deleting medical record {record_id} for user {user_id}")
 
         # Verify ownership
-        record_result = supabase.from_('medical_records').select('id').eq(
+        record_result = supabase.from_('pdf_documents').select('id').eq(
             'id', record_id
         ).eq(
             'user_id', user_id
@@ -415,14 +415,14 @@ async def delete_medical_record(
             )
 
         # Delete record pages (will cascade due to foreign key)
-        pages_result = supabase.from_('record_pages').delete().eq(
-            'medical_record_id', record_id
+        pages_result = supabase.from_('pdf_pages').delete().eq(
+            'pdf_document_id', record_id
         ).eq(
             'user_id', user_id
         ).execute()
 
         # Delete medical record
-        record_delete_result = supabase.from_('medical_records').delete().eq(
+        record_delete_result = supabase.from_('pdf_documents').delete().eq(
             'id', record_id
         ).eq(
             'user_id', user_id

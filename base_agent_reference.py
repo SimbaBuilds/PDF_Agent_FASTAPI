@@ -94,12 +94,11 @@ class BaseAgent:
         retry_config: Optional[RetryConfig] = None,
         calling_agent: str = None,
         enable_caching: bool = False,
-        cache_static_content: bool = True,
-        messages: Optional[List[Message]] = None
+        cache_static_content: bool = True
     ):
         """
         Initialize a base agent with customizable system prompt and actions.
-
+        
         Args:
             actions: List of Action objects defining available actions with their handlers
             additional_context: The context that defines the agent's behavior
@@ -113,7 +112,6 @@ class BaseAgent:
             calling_agent: Name of the agent calling this agent
             enable_caching: Whether to enable Anthropic prompt caching (only for Anthropic models)
             cache_static_content: Whether to cache static content sections
-            messages: Optional list of initial messages to add to conversation history
         """
         provider = get_provider_from_model(model)
 
@@ -152,12 +150,8 @@ class BaseAgent:
         
         all_actions = actions
         self.actions = {action.name: action for action in all_actions}  # Store actions by name
-
+        
         self.messages = []
-        # Add initial messages if provided
-        if messages:
-            self.add_message(messages)
-
         self.action_re = re.compile('^Action: (\w+): (.*)', re.MULTILINE | re.IGNORECASE | re.DOTALL)
         self.max_turns = max_turns
         
@@ -425,14 +419,12 @@ class BaseAgent:
 
     async def _execute_action_handler(self, action: Action, action_input: str) -> str:
         """Execute an action handler, handling both sync and async handlers."""
-        # Call the handler first
-        result = action.handler(action_input)
-
-        # Check if the result is a coroutine (handles wrapped async functions)
-        if inspect.iscoroutine(result):
-            return await result
+        if inspect.iscoroutinefunction(action.handler):
+            # Async handler - use await
+            return await action.handler(action_input)
         else:
-            return result
+            # Sync handler - call directly
+            return action.handler(action_input)
 
     def _process_observation_embedding(self, response: str, observation: str) -> str:
         """
@@ -735,14 +727,10 @@ Do not include any explanation - just the corrected JSON wrapped in ```json``` c
             # Define cancellation check function
             def check_cancellation():
                 if request_id and supabase:
-                    try:
-                        from app.agents.primary_agent.primary_agent import check_cancellation_request
-                        from fastapi import HTTPException
-                        if check_cancellation_request(request_id, user_id, supabase):
-                            raise HTTPException(status_code=499, detail="Request was cancelled during agent processing")
-                    except ImportError:
-                        # check_cancellation_request not available, skip cancellation checking
-                        pass
+                    from app.agents.primary_agent.primary_agent import check_cancellation_request
+                    from fastapi import HTTPException
+                    if check_cancellation_request(request_id, user_id, supabase):
+                        raise HTTPException(status_code=499, detail="Request was cancelled during agent processing")
             
             action_count = 0
             
@@ -865,14 +853,14 @@ Do not include any explanation - just the corrected JSON wrapped in ```json``` c
                     self._last_observation = observation
 
                     self.logger.info(f"Action {action_count}/{self.max_turns} executed")
-
+                    
                     # Check for cancellation after action execution
                     check_cancellation()
-
+                    
                     if action_count >= self.max_turns:
                         self.logger.warning("Max actions reached without final response")
                         return self._handle_max_turns_reached()
-
+                        
                     self.logger.info(f"Adding observation to messages: {observation}")
                     self.add_message(observation)
                 else:

@@ -206,7 +206,7 @@ def create_email_pdf_action(
 
     return Action(
         name="email_pdf",
-        description="Send a PDF document to a recipient via email. IMPORTANT: Before using this tool, you MUST ask the user for their name and email address. Use create_pdf first to generate the document, then use this tool to send it.",
+        description="Send a PDF document to a recipient via email. You will need the user's name and email so if you don't it, please ask them. Use create_pdf first to generate the document, then use this tool to send it.",
         parameters={
             "pdf_id": {
                 "type": "string",

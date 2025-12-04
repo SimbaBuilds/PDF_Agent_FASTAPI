@@ -23,36 +23,21 @@ from supabase import Client as SupabaseClient
 from app.agents.tools.fetch_pdf_content import create_fetch_pdf_content_action
 from app.agents.tools.create_pdf import create_create_pdf_action
 from app.agents.tools.email_pdf import create_email_pdf_action
-from app.agents.primary_agent.perplexity_tools import get_perplexity_search_action
+from app.agents.tools.perplexity_tools import get_perplexity_search_action
 from app.config.config import PDF_AGENT_LLM_MODEL, PDF_AGENT_MAX_TURNS
 
 logger = logging.getLogger(__name__)
 
 
 # System prompt for the PDF Agent
-PDF_AGENT_CONTEXT = """You are a PDF document assistant that helps users interact with their uploaded PDF documents.
-
-Your capabilities:
-1. **Search PDFs**: Find and retrieve content from uploaded PDF documents using semantic search (for concepts/topics) or grep search (for exact text patterns)
-2. **Create PDFs**: Generate summary or report documents from content you've gathered
-3. **Web Search**: Search the web for additional information using Perplexity
-4. **Email PDFs**: Send generated PDF documents to recipients via email
-
-Important guidelines:
-- When users ask about content in their PDFs, use fetch_pdf_content with semantic search for natural language queries
-- Use grep search when looking for specific terms, codes, or exact phrases
-- When users want a document emailed, you MUST ask for their name and email address before sending
-- Keep responses concise unless the user asks for more detail
-- Always cite which PDF/page the information came from when retrieving content"""
-
+PDF_AGENT_CONTEXT = """You are a helpful AI assistant. Your capabilties are outlined in the tool descriptions below.
+"""
 PDF_AGENT_INSTRUCTIONS = """
 - Current date/time: {current_time}
-- You have access to the user's uploaded PDF documents
-- Use semantic search for questions like "what does the document say about X"
-- Use grep search for specific terms or exact text matching
-- When creating PDFs, include clear titles and well-organized content
-- Always confirm email recipient details before sending"""
-
+Guidelines:
+- Keep responses concise unless the user asks for more detail
+- Always cite which PDF/page the information came from when retrieving content
+"""
 
 class PrimaryAgent(BaseAgent):
     """

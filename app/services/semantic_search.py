@@ -784,9 +784,9 @@ class SemanticSearchService:
             })
             return False
 
-    def queue_embedding_job_for_record_page(
+    def queue_embedding_job_for_pdf_page(
         self,
-        record_page_id: str,
+        pdf_page_id: str,
         content: str,
         user_id: str,
         supabase: SupabaseClient
@@ -795,7 +795,7 @@ class SemanticSearchService:
         Queue an embedding job for a record page for async processing via Supabase Edge Functions.
 
         Args:
-            record_page_id: ID of the record page to embed
+            pdf_page_id: ID of the record page to embed
             content: Content to embed
             user_id: User ID for validation
             supabase: Supabase client for database operations
@@ -805,19 +805,19 @@ class SemanticSearchService:
         """
         start_time = time.time()
 
-        logger.info(f"Queuing embedding job for record page {record_page_id}", extra={
-            'record_page_id': record_page_id,
+        logger.info(f"Queuing embedding job for record page {pdf_page_id}", extra={
+            'pdf_page_id': pdf_page_id,
             'user_id': user_id,
             'content_length': len(content),
-            'action': 'queue_embedding_job_record_page_start'
+            'action': 'queue_embedding_job_pdf_page_start'
         })
 
         try:
             # Insert directly into embedding_jobs table for record pages
             job_data = {
                 'id': str(uuid4()),  # Generate UUID
-                'table_name': 'record_pages',
-                'record_page_id': record_page_id,
+                'table_name': 'pdf_pages',
+                'pdf_page_id': pdf_page_id,
                 'resource_id': None,  # NULL for record pages
                 'user_id': user_id,
                 'content': content,
@@ -831,35 +831,35 @@ class SemanticSearchService:
             if result.data:
                 job_id = result.data[0]['id']
                 duration = time.time() - start_time
-                logger.info(f"Successfully queued embedding job {job_id} for record page {record_page_id}", extra={
-                    'record_page_id': record_page_id,
+                logger.info(f"Successfully queued embedding job {job_id} for record page {pdf_page_id}", extra={
+                    'pdf_page_id': pdf_page_id,
                     'user_id': user_id,
                     'job_id': job_id,
                     'duration_seconds': duration,
-                    'action': 'queue_embedding_job_record_page_complete'
+                    'action': 'queue_embedding_job_pdf_page_complete'
                 })
                 return True
             else:
-                logger.warning(f"Failed to queue embedding job for record page {record_page_id}", extra={
-                    'record_page_id': record_page_id,
+                logger.warning(f"Failed to queue embedding job for record page {pdf_page_id}", extra={
+                    'pdf_page_id': pdf_page_id,
                     'user_id': user_id,
-                    'action': 'queue_embedding_job_record_page_failed'
+                    'action': 'queue_embedding_job_pdf_page_failed'
                 })
                 return False
 
         except Exception as e:
             duration = time.time() - start_time
             logger.error(f"Failed to queue embedding job for record page: {str(e)}", extra={
-                'record_page_id': record_page_id,
+                'pdf_page_id': pdf_page_id,
                 'user_id': user_id,
                 'error_type': type(e).__name__,
                 'error_message': str(e),
                 'duration_seconds': duration,
-                'action': 'queue_embedding_job_record_page_error'
+                'action': 'queue_embedding_job_pdf_page_error'
             })
             return False
 
-    async def batch_queue_embedding_jobs_for_record_pages(
+    async def batch_queue_embedding_jobs_for_pdf_pages(
         self,
         page_jobs: List[Dict[str, str]],
         user_id: str,
@@ -869,7 +869,7 @@ class SemanticSearchService:
         Batch queue embedding jobs for multiple record pages in a single database operation.
 
         Args:
-            page_jobs: List of dicts with 'record_page_id' and 'content' keys
+            page_jobs: List of dicts with 'pdf_page_id' and 'content' keys
             user_id: User ID for validation
             supabase: Supabase client for database operations
 
@@ -896,8 +896,8 @@ class SemanticSearchService:
             for page_job in page_jobs:
                 job_data = {
                     'id': str(uuid4()),
-                    'table_name': 'record_pages',
-                    'record_page_id': page_job['record_page_id'],
+                    'table_name': 'pdf_pages',
+                    'pdf_page_id': page_job['pdf_page_id'],
                     'resource_id': None,  # NULL for record pages
                     'user_id': user_id,
                     'content': page_job['content'],
@@ -1187,7 +1187,7 @@ class SemanticSearchService:
             for row in result.data:
                 formatted_results.append({
                     'page_id': row['id'],
-                    'pdf_id': row['medical_record_id'],
+                    'pdf_id': row['pdf_document_id'],
                     'page_number': row['page_number'],
                     'content': row['content'],
                     'similarity': row['similarity']
@@ -1286,7 +1286,7 @@ class SemanticSearchService:
             for row in result.data:
                 formatted_results.append({
                     'page_id': row['id'],
-                    'pdf_id': row['medical_record_id'],
+                    'pdf_id': row['pdf_document_id'],
                     'page_number': row['page_number'],
                     'content': row['content'],
                     'match_count': row['match_count']

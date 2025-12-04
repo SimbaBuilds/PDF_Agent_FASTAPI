@@ -362,36 +362,56 @@ class AnthropicProvider(ModelProvider):
     @exponential_backoff_retry
     def generate_vision_response(self, text_prompt: str, image_url: str, temperature: float = 0.1) -> str:
         """Generate response using Claude vision capabilities"""
-        
-        # Claude doesn't support image URLs - need to fetch and convert to base64
-        try:
-            # Fetch the image from URL
-            image_response = requests.get(image_url, timeout=30)
-            image_response.raise_for_status()
-            
-            # Convert to base64
-            image_base64 = base64.b64encode(image_response.content).decode('utf-8')
-            
-            # Detect image format from image data (magic bytes)
-            image_data = image_response.content
-            if image_data.startswith(b'\x89PNG\r\n\x1a\n'):
-                content_type = 'image/png'
-            elif image_data.startswith(b'\xff\xd8\xff'):
-                content_type = 'image/jpeg'
-            elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
-                content_type = 'image/gif'
-            elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
-                content_type = 'image/webp'
-            else:
-                # Fallback to HTTP header if we can't detect from magic bytes
-                content_type = image_response.headers.get('content-type', 'image/jpeg')
-                if 'image/' not in content_type:
-                    content_type = 'image/jpeg'  # Final fallback
-                
-            self.logger.info(f"Converted image to base64 for Claude vision API (size: {len(image_base64)} chars, type: {content_type})")
-            
-        except Exception as e:
-            raise RuntimeError(f"Failed to fetch and convert image for Claude vision API: {str(e)}")
+
+        # Check if image_url is already a data URL
+        if image_url.startswith('data:'):
+            try:
+                # Extract media type and base64 data from data URL
+                # Format: data:image/png;base64,<base64_data>
+                header, base64_data = image_url.split(',', 1)
+                media_type = header.split(':')[1].split(';')[0]
+
+                # Validate it's an image
+                if not media_type.startswith('image/'):
+                    raise ValueError(f"Invalid media type: {media_type}")
+
+                image_base64 = base64_data
+                content_type = media_type
+
+                self.logger.info(f"Using provided base64 image for Claude vision API (size: {len(image_base64)} chars, type: {content_type})")
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to parse data URL for Claude vision API: {str(e)}")
+        else:
+            # Claude doesn't support image URLs - need to fetch and convert to base64
+            try:
+                # Fetch the image from URL
+                image_response = requests.get(image_url, timeout=30)
+                image_response.raise_for_status()
+
+                # Convert to base64
+                image_base64 = base64.b64encode(image_response.content).decode('utf-8')
+
+                # Detect image format from image data (magic bytes)
+                image_data = image_response.content
+                if image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+                    content_type = 'image/png'
+                elif image_data.startswith(b'\xff\xd8\xff'):
+                    content_type = 'image/jpeg'
+                elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+                    content_type = 'image/gif'
+                elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
+                    content_type = 'image/webp'
+                else:
+                    # Fallback to HTTP header if we can't detect from magic bytes
+                    content_type = image_response.headers.get('content-type', 'image/jpeg')
+                    if 'image/' not in content_type:
+                        content_type = 'image/jpeg'  # Final fallback
+
+                self.logger.info(f"Converted image to base64 for Claude vision API (size: {len(image_base64)} chars, type: {content_type})")
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to fetch and convert image for Claude vision API: {str(e)}")
         
         # Build the messages for Anthropic with vision (base64 format)
         anthropic_messages = [

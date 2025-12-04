@@ -13,7 +13,7 @@ import os
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from app.agents.models import Action
-from .base_service import (
+from app.agents.primary_agent.base_service import (
     make_authenticated_request,
     create_service_action,
     parse_tool_input,

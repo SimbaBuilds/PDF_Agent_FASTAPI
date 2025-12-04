@@ -8,17 +8,24 @@ with text extraction and embedding generation.
 import io
 import logging
 import time
+import base64
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID, uuid4
 from datetime import datetime
 import requests
 import PyPDF2
 from pdf2image import convert_from_bytes
+from PIL import Image
 from supabase import Client as SupabaseClient
 
 from app.services.ocr_processor import ocr_processor
 from app.services.semantic_search import semantic_search_service
+from app.services.vision_processor import process_image_with_vision
 from app.utils.logging.component_loggers import get_api_logger
+
+# Increase PIL image size limit to handle large PDFs
+# Default is ~89 million pixels, we'll set to 200 million to handle large scanned documents
+Image.MAX_IMAGE_PIXELS = 200000000
 
 logger = get_api_logger(__name__)
 
@@ -155,7 +162,7 @@ class PDFProcessor:
             for page_num, page_content in enumerate(pages, 1):
                 page_id = await self._create_record_page(
                     user_id=user_id,
-                    medical_record_id=record_id,
+                    pdf_document_id=record_id,
                     page_number=page_num,
                     content=page_content,
                     supabase=supabase
@@ -170,7 +177,7 @@ class PDFProcessor:
 
             # Batch queue all embedding jobs in a single database operation
             if embedding_jobs:
-                embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_record_pages(
+                embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
                     supabase=supabase
@@ -180,7 +187,7 @@ class PDFProcessor:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
 
             # Update medical record status to completed
-            await self._update_medical_record_status(record_id, 'completed', supabase)
+            await self._update_pdf_document_status(record_id, 'completed', supabase)
 
             duration = time.time() - start_time
             logger.info(f"Successfully processed file {original_filename} in {duration:.2f}s")
@@ -199,7 +206,7 @@ class PDFProcessor:
 
             # If we created a record, mark it as failed
             if 'record_id' in locals():
-                await self._update_medical_record_status(record_id, 'failed', supabase)
+                await self._update_pdf_document_status(record_id, 'failed', supabase)
 
             return {
                 'success': False,
@@ -225,6 +232,75 @@ class PDFProcessor:
         else:
             raise ValueError(f"Unsupported file type: {file_type}. Only PDF files are supported.")
 
+    def _pil_image_to_data_url(self, pil_image, max_size_mb: float = 4.5, max_dimension: int = 8000) -> str:
+        """
+        Convert PIL image to base64 data URL, with automatic resizing to stay under size and dimension limits.
+
+        Args:
+            pil_image: PIL Image object
+            max_size_mb: Maximum size in megabytes (default 4.5 MB for Anthropic API)
+            max_dimension: Maximum width or height in pixels (default 8000 for Anthropic API)
+
+        Returns:
+            Base64 data URL string
+        """
+        import io as io_module
+        from PIL import Image
+
+        # Convert image to RGB if needed
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+
+        # Check if dimensions exceed limit and resize if needed
+        if pil_image.width > max_dimension or pil_image.height > max_dimension:
+            # Calculate scale factor to fit within max dimension
+            scale_factor = min(max_dimension / pil_image.width, max_dimension / pil_image.height)
+            new_width = int(pil_image.width * scale_factor)
+            new_height = int(pil_image.height * scale_factor)
+            logger.info(f"Image dimensions ({pil_image.width}x{pil_image.height}) exceed max {max_dimension}px, resizing to {new_width}x{new_height}")
+            pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Try saving at full size first
+        img_byte_arr = io_module.BytesIO()
+        pil_image.save(img_byte_arr, format='PNG', optimize=True)
+        img_bytes = img_byte_arr.getvalue()
+        format_type = 'png'
+
+        # Check size and resize if needed
+        max_size_bytes = int(max_size_mb * 1024 * 1024)
+
+        if len(img_bytes) > max_size_bytes:
+            logger.info(f"Image too large ({len(img_bytes) / 1024 / 1024:.2f} MB), resizing to fit under {max_size_mb} MB")
+
+            # Calculate resize factor to achieve target size
+            # Start with a conservative estimate
+            scale_factor = 0.7
+            format_type = 'jpeg'  # Switch to JPEG for smaller file size
+
+            while len(img_bytes) > max_size_bytes and scale_factor > 0.1:
+                # Resize image
+                new_width = int(pil_image.width * scale_factor)
+                new_height = int(pil_image.height * scale_factor)
+                resized_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                # Save resized image
+                img_byte_arr = io_module.BytesIO()
+                resized_image.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                img_bytes = img_byte_arr.getvalue()
+
+                logger.debug(f"Resized to {new_width}x{new_height} (scale: {scale_factor:.2f}), size: {len(img_bytes) / 1024 / 1024:.2f} MB")
+
+                # Reduce scale factor for next iteration
+                scale_factor *= 0.8
+
+            logger.info(f"Final image size: {len(img_bytes) / 1024 / 1024:.2f} MB (format: {format_type})")
+
+        # Encode to base64
+        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+        # Return as data URL
+        return f"data:image/{format_type};base64,{img_base64}"
+
     async def _process_pdf(self, pdf_data: bytes) -> List[str]:
         """Process PDF file and extract text from each page."""
         pages = []
@@ -243,10 +319,10 @@ class PDFProcessor:
                         pages.append(text.strip())
                         logger.debug(f"PDF page {page_num + 1}: extracted {len(text)} characters via text extraction")
                     else:
-                        # Insufficient text, use OCR
-                        logger.info(f"PDF page {page_num + 1}: text extraction insufficient ({len(text)} chars), using OCR")
+                        # Insufficient text, try vision processing first, then OCR as fallback
+                        logger.info(f"PDF page {page_num + 1}: text extraction insufficient ({len(text) if text else 0} chars), trying vision processing")
 
-                        # Convert PDF page to image for OCR
+                        # Convert PDF page to image
                         page_images = convert_from_bytes(
                             pdf_data,
                             first_page=page_num + 1,
@@ -255,6 +331,27 @@ class PDFProcessor:
                         )
 
                         if page_images:
+                            # Try vision processing first
+                            try:
+                                # Convert image to base64 data URL
+                                image_data_url = self._pil_image_to_data_url(page_images[0])
+
+                                # Use vision processing to extract text
+                                vision_text = process_image_with_vision(
+                                    user_message="Extract all text from this document page. Preserve formatting and structure.",
+                                    image_url=image_data_url
+                                )
+
+                                if vision_text and len(vision_text.strip()) > 50:
+                                    pages.append(vision_text.strip())
+                                    logger.info(f"PDF page {page_num + 1}: extracted {len(vision_text)} characters via vision processing")
+                                    continue
+                                else:
+                                    logger.warning(f"PDF page {page_num + 1}: vision processing returned insufficient text, falling back to OCR")
+                            except Exception as vision_error:
+                                logger.warning(f"PDF page {page_num + 1}: vision processing failed ({str(vision_error)}), falling back to OCR")
+
+                            # Fallback to OCR if vision processing failed
                             ocr_text = ocr_processor.extract_text_from_pil_image(page_images[0])
                             if ocr_text:
                                 pages.append(ocr_text)
@@ -262,7 +359,7 @@ class PDFProcessor:
                             else:
                                 logger.warning(f"PDF page {page_num + 1}: OCR failed, skipping page")
                         else:
-                            logger.warning(f"PDF page {page_num + 1}: failed to convert to image for OCR")
+                            logger.warning(f"PDF page {page_num + 1}: failed to convert to image")
 
                 except Exception as e:
                     logger.error(f"Error processing PDF page {page_num + 1}: {str(e)}")
@@ -301,11 +398,11 @@ class PDFProcessor:
                 'updated_at': datetime.now().isoformat()
             }
 
-            result = supabase.from_('medical_records').insert(record_data).execute()
+            result = supabase.from_('pdf_documents').insert(record_data).execute()
 
             if result.data:
                 record_id = UUID(result.data[0]['id'])
-                logger.info(f"Created medical record {record_id}")
+                logger.info(f"Created PDF document record {record_id}")
                 return record_id
             else:
                 raise ValueError("Failed to create medical record")
@@ -316,7 +413,7 @@ class PDFProcessor:
     async def _create_record_page(
         self,
         user_id: str,
-        medical_record_id: UUID,
+        pdf_document_id: UUID,
         page_number: int,
         content: str,
         supabase: SupabaseClient
@@ -326,19 +423,16 @@ class PDFProcessor:
             page_data = {
                 'id': str(uuid4()),
                 'user_id': user_id,
-                'medical_record_id': str(medical_record_id),
+                'pdf_document_id': str(pdf_document_id),
                 'page_number': page_number,
-                'content': content,
-                'processed_at': datetime.now().isoformat(),
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat()
+                'content': content
             }
 
-            result = supabase.from_('record_pages').insert(page_data).execute()
+            result = supabase.from_('pdf_pages').insert(page_data).execute()
 
             if result.data:
                 page_id = UUID(result.data[0]['id'])
-                logger.debug(f"Created record page {page_id} for medical record {medical_record_id}")
+                logger.debug(f"Created PDF page {page_id} for PDF document {pdf_document_id}")
                 return page_id
             else:
                 raise ValueError("Failed to create record page")
@@ -346,7 +440,7 @@ class PDFProcessor:
         except Exception as e:
             raise ValueError(f"Database error creating record page: {str(e)}")
 
-    async def _update_medical_record_status(
+    async def _update_pdf_document_status(
         self,
         record_id: UUID,
         status: str,
@@ -354,7 +448,7 @@ class PDFProcessor:
     ) -> None:
         """Update medical record status."""
         try:
-            result = supabase.from_('medical_records').update({
+            result = supabase.from_('pdf_documents').update({
                 'status': status,
                 'updated_at': datetime.now().isoformat()
             }).eq('id', str(record_id)).execute()
@@ -410,7 +504,7 @@ class PDFProcessor:
                     'updated_at': datetime.now().isoformat()
                 }
 
-                result = supabase.from_('medical_records').insert(record_data).execute()
+                result = supabase.from_('pdf_documents').insert(record_data).execute()
 
                 if result.data:
                     record_ids.append(record_id)
@@ -474,7 +568,7 @@ class PDFProcessor:
             for page_num, page_content in enumerate(pages, 1):
                 page_id = await self._create_record_page(
                     user_id=user_id,
-                    medical_record_id=record_id,
+                    pdf_document_id=record_id,
                     page_number=page_num,
                     content=page_content,
                     supabase=supabase
@@ -489,7 +583,7 @@ class PDFProcessor:
 
             # Batch queue all embedding jobs in a single database operation
             if embedding_jobs:
-                embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_record_pages(
+                embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
                     supabase=supabase
@@ -499,7 +593,7 @@ class PDFProcessor:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
 
             # Update medical record with page count and status
-            await self._update_medical_record_after_processing(
+            await self._update_pdf_document_after_processing(
                 record_id=record_id,
                 num_pages=len(pages),
                 page_ids=page_ids,
@@ -522,7 +616,7 @@ class PDFProcessor:
             logger.error(f"Failed to process file {original_filename} for record {record_id}: {str(e)}")
 
             # Mark the existing record as failed
-            await self._update_medical_record_status(record_id, 'failed', supabase)
+            await self._update_pdf_document_status(record_id, 'failed', supabase)
 
             return {
                 'success': False,
@@ -530,7 +624,7 @@ class PDFProcessor:
                 'processing_time': duration
             }
 
-    async def _update_medical_record_after_processing(
+    async def _update_pdf_document_after_processing(
         self,
         record_id: UUID,
         num_pages: int,
@@ -539,7 +633,7 @@ class PDFProcessor:
     ) -> None:
         """Update medical record after successful processing."""
         try:
-            result = supabase.from_('medical_records').update({
+            result = supabase.from_('pdf_documents').update({
                 'num_pages': num_pages,
                 'status': 'completed',
                 'metadata': {
