@@ -681,9 +681,9 @@ Do not include any explanation - just the corrected JSON wrapped in ```json``` c
             self.logger.info(f"{self.agent_name} treating as direct response (no action patterns found)")
             return result.strip(), None
 
-        # If we see action names but can't parse, request retry
+        # If we see action names but can't parse, send error back to LLM for correction
         self.logger.error(f"{self.agent_name} found action patterns but couldn't parse format")
-        return "Could not parse response format. Please use valid JSON format as specified in the template.", None
+        return None, "Observation: Could not parse response format. Please output valid JSON as shown in the response template. Only one JSON block per turn."
 
     async def query(self, messages: List[Message], user_id: UUID, request_id: str = None, supabase = None) -> str:
         """

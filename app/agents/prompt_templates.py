@@ -29,7 +29,7 @@ OR
 }}
 ```
 
-Always output valid JSON. Think first in the "thought" field, then specify the type and appropriate action or response.
+Always output valid JSON.  Only one JSON block per response. Think first in the "thought" field, then specify the type and appropriate action or response.
 """
 
 def format_action(action: Action) -> str:
