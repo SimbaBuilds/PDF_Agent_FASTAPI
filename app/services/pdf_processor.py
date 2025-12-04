@@ -171,7 +171,7 @@ class PDFProcessor:
 
                 # Collect embedding job data for batch processing
                 embedding_jobs.append({
-                    'record_page_id': str(page_id),
+                    'pdf_page_id': str(page_id),
                     'content': page_content
                 })
 
@@ -180,14 +180,14 @@ class PDFProcessor:
                 embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
+                    pdf_document_id=record_id,
                     supabase=supabase
                 )
 
                 if not embedding_queued:
                     logger.warning(f"Failed to batch queue {len(embedding_jobs)} embedding jobs for record {record_id}")
 
-            # Update medical record status to completed
-            await self._update_pdf_document_status(record_id, 'completed', supabase)
+            # Status will be updated to 'completed' by database trigger after all embeddings finish
 
             duration = time.time() - start_time
             logger.info(f"Successfully processed file {original_filename} in {duration:.2f}s")
@@ -577,7 +577,7 @@ class PDFProcessor:
 
                 # Collect embedding job data for batch processing
                 embedding_jobs.append({
-                    'record_page_id': str(page_id),
+                    'pdf_page_id': str(page_id),
                     'content': page_content
                 })
 
@@ -586,6 +586,7 @@ class PDFProcessor:
                 embedding_queued = await semantic_search_service.batch_queue_embedding_jobs_for_pdf_pages(
                     page_jobs=embedding_jobs,
                     user_id=user_id,
+                    pdf_document_id=record_id,
                     supabase=supabase
                 )
 
@@ -631,11 +632,15 @@ class PDFProcessor:
         page_ids: List[UUID],
         supabase: SupabaseClient
     ) -> None:
-        """Update medical record after successful processing."""
+        """Update medical record after successful page processing.
+
+        Note: Status remains 'processing' until all embeddings complete.
+        The status will be updated to 'completed' by database trigger.
+        """
         try:
             result = supabase.from_('pdf_documents').update({
                 'num_pages': num_pages,
-                'status': 'completed',
+                # Status remains 'processing' - will be updated by trigger after embeddings complete
                 'metadata': {
                     'placeholder': False,
                     'processing_completed': datetime.now().isoformat(),
