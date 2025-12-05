@@ -1292,7 +1292,7 @@ class SemanticSearchService:
                     'pdf_id': row['pdf_document_id'],
                     'page_number': row['page_number'],
                     'content': row['content'],
-                    'match_count': row['match_count']
+                    'match_count': row['matches_found']
                 })
 
             total_duration = time.time() - start_time
