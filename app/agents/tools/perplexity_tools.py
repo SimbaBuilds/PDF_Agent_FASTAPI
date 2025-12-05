@@ -183,5 +183,5 @@ def get_perplexity_search_action(user_id: str = None) -> Action:
         },
         returns="JSON object with search results and citations",
         handler_func=lambda input_str: search_web_handler(input_str, user_id),
-        example='Action: perplexity_search: "{"query": "latest research on renewable energy"}"'
+        example='Action: perplexity_search: {"query": "latest research on renewable energy"}'
     )

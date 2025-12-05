@@ -7,29 +7,54 @@ from app.config import USE_ONE_HOUR_CACHE
 RESPONSE_TEMPLATE = """=== Response Template ===
 You must respond with valid JSON in one of the following two formats:
 
-1. When an action IS needed (calling a tool or sub agent):
+1. When an action IS needed (calling a tool or sub-agent):
 ```json
 {{
   "thought": "Your reasoning about what action to take",
   "type": "action",
   "action": {{
     "name": "action_name",
-    "parameters": {{...}}
+    "parameters": {{
+      "param1": "value1",
+      "param2": "value2"
+    }}
   }}
 }}
 ```
-OR
+
+Example action response:
+```json
+{{
+  "thought": "The user wants to find information about CD-150 in their PDFs. I should use grep search for this specific code.",
+  "type": "action",
+  "action": {{
+    "name": "fetch_pdf_content",
+    "parameters": {{
+      "search_type": "grep",
+      "query": "CD-150"
+    }}
+  }}
+}}
+```
 
 2. When NO action or NO FURTHER ACTION is needed:
 ```json
 {{
-  "thought": "Your reasoning about why no action is needed", 
+  "thought": "Your reasoning about why no action is needed",
   "type": "response",
-  "response": "Your response"
+  "response": "Your response to the user"
 }}
 ```
 
-Always output valid JSON.  Only one JSON block per response. Think first in the "thought" field, then specify the type and appropriate action or response.
+Example response:
+```json
+{{
+  "thought": "I found the information about CD-150 in the search results. I can now answer the user's question.",
+  "type": "response",
+  "response": "CD-150 refers to the Community Corrections standard for intake procedures, which requires..."
+}}
+```
+Always output valid JSON. Only one JSON block per response.
 """
 
 def format_action(action: Action) -> str:
@@ -48,23 +73,19 @@ def format_action(action: Action) -> str:
     action_str.append(f"Returns: {action.returns}")
 
     if action.example:
-        # Ensure the example format is consistent with the expected JSON structure
+        # Extract just the parameters JSON from the example if it's in old format
         example = action.example
 
-        # Check if the example is using the old string format instead of JSON
-        if example.startswith(f'Action: {action.name}: "') and not example.startswith(f'Action: {action.name}: {{'):
-            # Extract the parameter value from the string format
-            param_value = example.split(f'Action: {action.name}: "', 1)[1].rsplit('"', 1)[0]
+        # Try to extract JSON parameters from various formats
+        if example.startswith(f'Action: {action.name}:'):
+            # Extract the JSON part after "Action: name: "
+            json_part = example.split(f'Action: {action.name}:', 1)[1].strip()
+            # Remove surrounding quotes if present
+            if json_part.startswith('"') and json_part.endswith('"'):
+                json_part = json_part[1:-1]
+            example = json_part
 
-            # Determine the parameter name - use the first parameter name if there's only one parameter
-            if len(action.parameters) == 1:
-                param_name = list(action.parameters.keys())[0]
-                example = f'Action: {action.name}: {{"{param_name}": "{param_value}"}}'
-            elif 'request' in action.parameters:
-                # Default to 'request' parameter for agent calls
-                example = f'Action: {action.name}: {{"request": "{param_value}"}}'
-
-        action_str.append(f"Example Invocation: {example}")
+        # action_str.append(f"Example parameters: {example}")
 
     return "\n".join(action_str)
 
