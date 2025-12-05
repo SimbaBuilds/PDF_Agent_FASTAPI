@@ -90,7 +90,7 @@ class PDFProcessor:
                             'Authorization': f'Bearer {supabase_anon_key}',
                             'Content-Type': 'application/json'
                         },
-                        json={'batchSize': 50},  # Process up to 50 jobs per invocation
+                        json={'batchSize': 500},  # Process up to 50 jobs per invocation
                         timeout=30  # Allow time for edge function to acknowledge
                     )
 
